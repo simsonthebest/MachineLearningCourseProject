@@ -1,0 +1,99 @@
+---
+title: "ML Course Project"
+author: "Hyun Keun Ahn"
+date: "1/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Introduction
+
+With the emergence of devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit*, it is now possible to monitor our physical activity on a continous basis. Although most people quantify *how much* of activity they do, they rarely look into *how well* they are doing. In this experiment, we will create a machine learning model using several parameters from these devices to predict whether people are performing exercise in a correct way or making mistakes. Six participants were asked to perform barbell lifts correctly and incorrectly in five ways. 
+
+## 2. Data Setup & Description
+
+We used **R 3.5.3** for the analysis. Required packages are ggplot2, ggfortify, caret, and randomForest. 
+
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+*classe* is a factor variable of 5 levels that represents the quality of the exercise:
+Class A = exactly according to the specification,
+Class B = throwing the elbows to the front,
+Class C = lifting the dumbbell only halfway, 
+Class D = lowering the dumbbell only halfway,
+Class E = throwing the hips to the front. 
+
+Because the first 7 columns were not directly related to the motion of the participants, they were excluded in creating the model. Further processings were done to omit the **NA** values. 
+
+```{r cleanup, message=FALSE, warning=FALSE}
+library(ggplot2); library(caret); library(randomForest); library(ggfortify)
+training <- read.csv("pml-training.csv", na.strings = c("NA","","#DIV/0!"))
+training <- training[, colSums(is.na(training)) == 0]
+
+testing <- read.csv("pml-testing.csv", na.strings = c("NA","","#DIV/0!"))
+testing <- testing[, colSums(is.na(testing)) == 0]
+
+training <- training[,-c(1:7)]; testing <- testing[, -c(1:7)]
+```
+
+Because we will perform cross-validation, training set was further broken down into the actual training set and validation set. For reproducibility, seed was set at 1234.
+
+```{r validation, message=FALSE, warning=FALSE}
+set.seed(1234)
+inTrain <- createDataPartition(y = training$classe, p = 0.7, list = FALSE)
+traindata <- training[inTrain,]; valdata <- training[-inTrain,]
+```
+
+## 3. Exploratory Analysis 
+
+Before we decide on the possible options of prediction model, we will decide whether our data is nonlinear or linear. Because our dataset is multidimensional, we will reduce into two dimensional space using the principal component analysis. (All exploratory analysis was done on the training data set)
+
+```{r pcomp, message=FALSE, warning=FALSE,fig.width=5, fig.height=5}
+train.pcomp <- prcomp(subset(traindata, select = -c(classe)))
+pca.plot <- autoplot(train.pcomp, data = traindata, colour = 'classe')
+pca.plot
+```
+
+The principal component plot shows that the data distribution is **nonlinear**. Therefore, we will choose machine learning algorithms that are more effective in nonlinear datasets. 
+
+## 4. Building the predictive model
+
+In this report, we tested three different prediction models: random forest, decision tree, and gradient boosting machine. Then, we selected the best model based on the performance on the cross-validation data.  
+
+```{r model, message=FALSE, warning=FALSE}
+mod.tree <- train(classe ~ ., data = traindata, method = "rpart")
+pred.tree <- predict(mod.tree, newdata = valdata)
+mod.rf <- train(classe ~ ., data = traindata, method = "rf")
+pred.rf <- predict(mod.rf, newdata = valdata)
+mod.gbm <- train(classe ~ ., data = traindata, method = "gbm", verbose = FALSE)
+pred.gbm <- predict(mod.gbm, newdata = valdata)
+
+val.acc <- data.frame(Tree = 1-mean(valdata$classe == pred.tree, na.rm = TRUE), 
+                      Rf = 1-mean(valdata$classe == pred.rf, na.rm = TRUE),
+                      Glm = 1-mean(valdata$classe == pred.gbm, na.rm = TRUE))
+val.acc
+```
+
+The out-of-sample errors were **51.1%, 0.6%, and 3.5%**, for decision tree, random forest, and gradient boosting machines, respectively. Since the **random forest** model predicted the best on the validation set, this will be our final choice. 
+
+```{r confusionmatrix, message=FALSE, warning=FALSE}
+confusionMatrix(pred.rf, valdata$classe)
+```
+
+## 5. Prediction on the test set. 
+
+Created random forest model was used make predictions from the testing set. 
+
+```{r final, message=FALSE, warning=FALSE}
+pred.final <- predict(mod.rf, newdata = testing)
+pred.final
+```
+
+## 6. Conclusion
+
+Random forest prediction model performed the best with the out-of-sample error from the validation set being 0.6%. 
